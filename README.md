@@ -136,11 +136,10 @@ To keep datMatcher somewhere else entirely, either of these takes precedence:
 1. The `--datmatcher-dir` option.
 2. The `DATMATCHER_DIR` environment variable.
 
-The legacy uppercase `UTILS/datMatcher/` is still searched, for older
-checkouts. `extract_colors` and `match_colors` are looked up with and without a
-`.exe` suffix, so the same layout works on either platform. If nothing is
-found, datRegrade says so and names every directory it searched, rather than
-failing later with a confusing error.
+`extract_colors` and `match_colors` are looked up with and without a `.exe`
+suffix, so the same layout works on either platform. If nothing is found,
+datRegrade says so and names every directory it searched, rather than failing
+later with a confusing error.
 
 ## Installing
 
@@ -327,33 +326,25 @@ what happens when the source and target are treated *differently*.
 
 ## The LUT toolkit
 
-Composing two LUTs has to be done numerically — you cannot just concatenate
-`.cube` files, because sampling the second LUT at the first LUT's output
-requires interpolation. `utils/cube.py` does that in-tree, and replaces
-the two helper scripts earlier versions of this project shelled out to.
+Composing two LUTs has to be done numerically: you cannot concatenate `.cube`
+files, because the second LUT has to be sampled at whatever the first one
+produced, and those values almost never land on the second LUT's grid.
+`utils/cube.py` does that composition.
 
 ```sh
-# Apply a.cube and then b.cube (b(a(rgb))), keeping the larger LUT size
-python utils/cube.py compose -i a.cube -c b.cube -o out.cube --preserve
-
-# Inspect a LUT
-python utils/cube.py info -i out.cube
-
-# Resize a LUT
-python utils/cube.py resize -i a.cube -o small.cube --size 33
-
-# Linearly blend two equally sized LUTs
-python utils/cube.py blend -i a.cube -c b.cube -o mix.cube --amount 0.5
+# Apply a.cube and then b.cube
+python utils/cube.py compose a.cube b.cube -o out.cube
 ```
 
-It implements the standard tetrahedral interpolation (matching the
-`interp="tetrahedral"` used by the AviSynth `DGCube` calls, so the LUTs behave
-the same in and out of the pipeline), plus nearest-neighbour, and normalizes
-`DOMAIN_MIN`/`DOMAIN_MAX` on read so callers always see `0..1`.
+It interpolates tetrahedrally — the same scheme the generated AviSynth scripts
+ask of `DGCube(interp="tetrahedral")`, so a LUT folded here renders identically
+to the same two LUTs chained inside the script. The result keeps the finer of
+the two grids: the coarser input is resampled up rather than the finer one being
+reduced, because the match LUT carries the detail and shrinking it to a
+conversion LUT's grid would give back less than the pipeline asked for.
 
-`compose` keeps the flag names of the script it replaced — `--combine`,
-`--preserve`, `--mixer`, `--method` — so existing command lines keep working,
-and its output has been verified cell-by-cell against that original.
+That is the whole tool. It reads and writes 3D `.cube` files and composes them,
+and nothing else — the pipeline needs exactly that and nothing more.
 
 ## Design notes
 
@@ -365,10 +356,11 @@ The background behind some of the structure above.
 writes command files, and never invokes DGIndexNV, datMatcher or ffmpeg.
 
 That split exists because the hard part of a regrade is a judgement call. The
-full default matrix is on the order of a thousand pipelines, and no automated
-metric tells you which one looks like the film you are matching — you have to
-look at frames. The generator gets you to the point where you can start
-looking; from there you drive it yourself and re-run only what you changed.
+full default matrix is 211 source/target pairs and roughly 16,000 capture
+pipelines, and no automated metric tells you which one looks like the film you
+are matching — you have to look at frames. The generator gets you to the point
+where you can start looking; from there you drive it yourself and re-run only
+what you changed.
 
 It also means the generator is cheap, safe to re-run, and works without any of
 the media tooling installed — you can prepare a project before datMatcher or
@@ -386,28 +378,27 @@ space. It is the only pair either of those variants takes part in, which is why
 match LUT is composed with it so that the pipeline stays a single LUT for the
 capture step. That composition is what `utils/cube.py` exists for.
 
-### Three LUT conventions worth knowing
+### LUT composition
 
-These are load-bearing: a reimplementation can be perfectly self-consistent and
-still disagree with the original tool on any of them.
+Three conventions are load-bearing, and each is pinned by the fact that the
+composition was checked value-for-value against the renderer's own behaviour
+across sizes, both input orders, and the real 65- and 33-point conversion LUTs.
 
 1. **File ordering.** `.cube` entries run red axis fastest, then green, then
-   blue, so a naive reshape yields `[b, g, r]`. `utils/cube.py` transposes
-   immediately and uses `[r, g, b]` everywhere else.
-2. **Interpolation.** Composition *always* samples tetrahedrally, matching the
-   `interp="tetrahedral"` the generated AviSynth scripts pass to `DGCube`, so
-   composing here and applying there agree. The `--method` flag only reaches
-   the resampling helper; using nearest-neighbour for the composition itself
-   introduces visible quantization error.
-3. **Tie-breaking.** Nearest-neighbour resampling rounds exact `.5` fractions
-   *down*. `numpy.rint` rounds halves to even instead, which differs on
-   exactly-tied inputs — resampling 3 → 5 hits them, and so does the real
-   65-point LUT.
+   blue, so a naive reshape yields `[b, g, r]`. `read_cube` and `write_cube`
+   transpose at the boundary and use `[r, g, b]` everywhere else.
+2. **Interpolation.** Composition samples tetrahedrally, matching what the
+   generated scripts pass to `DGCube`. Anything else would make a folded LUT
+   disagree with the same two LUTs chained in the script.
+3. **Grid size.** The result takes the finer of the two grids. Reducing the
+   match LUT to the conversion LUT's grid would quantise away detail that the
+   matching step spent time computing.
 
-None of these were reasoned out; they were established by comparing against the
-original LUTify script that `utils/cube.py` replaced, cell by cell, across sizes,
-mixer values and both interpolation methods. Each one was something an earlier
-draft got wrong, which is why they are written down rather than left implicit.
+Values are written to six decimal places, which is what the rest of the
+pipeline uses — both the bundled conversion LUTs and datMatcher's generated
+match LUTs — so a composed LUT is interchangeable with either. Six places
+resolve to 1e-6, far below the ~1e-3 step of the 10-bit capture that consumes
+them, so written precision is never the limiting factor.
 
 ## Project layout
 

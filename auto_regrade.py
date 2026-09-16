@@ -50,8 +50,6 @@ def _datmatcher_search_dirs():
     repo_root = Path(__file__).resolve().parent
     yield repo_root / DATMATCHER_SUBDIR
     yield repo_root / "utils"
-    yield repo_root / "UTILS" / "datMatcher"
-    yield repo_root / "UTILS"
 
 
 def _find_executable(directory, names, max_depth=3):
@@ -485,8 +483,7 @@ def main():
     source_path = Path(args.source).absolute()
     target_path = Path(args.target).absolute()
     luts_base_dir = repo_root / "LUTS"
-    # datRegrade composes LUTs with its own script instead of shelling out to
-    # the third-party LUTify script it used to vendor; see utils/cube.py.
+    # LUT composition is done in-tree; see utils/cube.py.
     cube_script = repo_root / "utils" / "cube.py"
     external_dirs = [repo_root] + list(_datmatcher_search_dirs())
 
@@ -709,7 +706,7 @@ def main():
                 combined_lut = get_combined_lut_path(luts_dir, sv['name'], variant, method)
                 os.makedirs(combined_lut.parent, exist_ok=True)
                 combined_lut_paths[(sv['name'], variant, method)] = combined_lut
-                record_cmd([sys.executable, str(cube_script), "compose", "--preserve", "--input", str(sv['lut_path']), "--combine", str(match_lut.relative_to(out_dir)), "--output", str(combined_lut.relative_to(out_dir))], step='combine_lut', desc=f"Combine {sv['name']} LUT with match LUT ({method}) for target {variant}")
+                record_cmd([sys.executable, str(cube_script), "compose", str(sv['lut_path']), str(match_lut.relative_to(out_dir)), "-o", str(combined_lut.relative_to(out_dir))], step='combine_lut', desc=f"Combine {sv['name']} LUT with match LUT ({method}) for target {variant}")
 
     post_combined_lut_paths = {}
     if any(sv['name'] == 'plain' for sv in source_variants) and 'hdr' in all_target_variants and source_luts:
@@ -725,9 +722,8 @@ def main():
                 post_combined_lut_paths[(method, post_lut_base)] = combined_lut
                 record_cmd(
                     [sys.executable, str(cube_script), "compose",
-                     "--preserve", "--input", str(match_lut.relative_to(out_dir)),
-                     "--combine", str(lut_map[post_lut_base]),
-                     "--output", str(combined_lut.relative_to(out_dir))],
+                     str(match_lut.relative_to(out_dir)), str(lut_map[post_lut_base]),
+                     "-o", str(combined_lut.relative_to(out_dir))],
                     step='combine_lut',
                     desc=f"Combine match LUT (plain->hdr) with post LUT {post_lut_base} for method {method}"
                 )
