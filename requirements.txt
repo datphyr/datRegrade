@@ -1,0 +1,13 @@
+# Python dependencies for datRegrade.
+#
+# The 3D LUT toolkit (datregrade/cube.py) needs numpy, and auto_regrade.py
+# renders its AviSynth scripts with Jinja2. Nothing else is required to
+# *prepare* a regrade project.
+#
+# To actually run a generated project you additionally need, outside of pip:
+#   * datMatcher's extract_colors / match_colors (https://github.com/datphyr/datMatcher)
+#   * ffmpeg
+#   * DGIndexNV, plus an AviSynth+ environment with DGDecodeNV and
+#     libplacebo (used by the generated .avs scripts)
+jinja2>=3.0
+numpy>=1.21

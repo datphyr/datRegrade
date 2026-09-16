@@ -1,0 +1,42 @@
+# Generated project output: a regrade run writes thousands of AviSynth
+# scripts, JSON colour reports, screenshots and LUTs under REGRADES/.
+REGRADES/
+
+# datMatcher is a separate project and is not vendored here; point
+# DATMATCHER_DIR at a checkout (or drop its binaries in utils/datMatcher/).
+utils/
+UTILS/
+
+# Generated batch/shell files
+*.bat
+*.sh
+!examples/*.sh
+!examples/*.bat
+
+# Generated LUT and analysis artefacts
+*.cube
+!LUTS/*.cube
+!tests/data/*.cube
+*_histogram.json
+*_colors.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+
+# Editor / OS cruft
+.vs/
+.vscode/
+*.user
+.DS_Store
+Thumbs.db
+
+# Backups
+*.bak
+*.orig

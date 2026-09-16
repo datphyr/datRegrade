@@ -1,0 +1,18 @@
+# Normalize line endings: this project is Windows-centric (generated .bat
+# files, DGIndexNV, AviSynth) but is also developed and tested on Linux.
+* text=auto
+
+# Windows batch files must keep CRLF to run correctly.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Shell scripts must keep LF.
+*.sh text eol=lf
+
+# Binary assets must never be line-ending normalized.
+*.cube -text
+*.exe binary
+*.dll binary
+*.mkv binary
+*.jpg binary
+*.png binary

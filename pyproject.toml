@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "datregrade"
+version = "0.1.0"
+description = "Prepare a colour-regrade project that matches an HDR source to a reference video"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Proprietary" }
+dependencies = [
+    "jinja2>=3.0",
+    "numpy>=1.21",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+datregrade-cube = "datregrade.cube:main"
+
+[tool.setuptools]
+packages = ["datregrade"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
