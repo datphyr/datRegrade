@@ -18,7 +18,9 @@ Inspect the generated scripts, run the steps you want, and compare the results.
 - [Installing](#installing)
 - [Usage](#usage)
 - [Options](#options)
+- [Matching methods](#matching-methods)
 - [The LUT toolkit](#the-lut-toolkit)
+- [Design notes](#design-notes)
 - [Project layout](#project-layout)
 - [Licensing note](#licensing-note)
 
@@ -75,8 +77,12 @@ REGRADES/MyFilm/
 ```
 
 On Windows the steps are `.bat`, elsewhere `.sh`. Each step file changes into
-its own directory first, and references the tools via paths relative to that
-project directory, so the files stay valid wherever the run happened.
+its own directory before running and references the tools relative to that
+directory, so a `REGRADES/MyFilm/` project stays valid if the repository moves
+— which matters when a run takes hours and the paths are long. Commands are
+recorded as absolute paths and relativized at generation time; tools that
+cannot be made relative to the project directory (datMatcher on another drive,
+or `ffmpeg` found on `PATH`) are left untouched.
 
 ## Requirements
 
@@ -107,6 +113,13 @@ utils/datMatcher/
 ├── extract_colors.exe
 └── match_colors.exe
 ```
+
+`extract_colors` links FFmpeg, so its binaries are big and are rebuilt on
+datMatcher's own schedule. An earlier revision of datRegrade kept several
+copies of them under `UTILS/datMatcher/` — including `v1`, `v2`, `v3` snapshots —
+which is how that directory passed 500 MB and why the repository shipped stale
+builds of a project that had moved on. Keeping them out is the reason a fresh
+clone is about 2 MB instead.
 
 Dropping in a whole **datMatcher checkout** works too — the executables are
 looked for a few directories deep, so a `build/` or `build/Release/` layout is
@@ -193,11 +206,58 @@ python auto_regrade.py \
 | `--luts` | `PQ_to_BT709_v1.cube,PQ_to_BT709_v2.cube` | LUT filenames, resolved against `LUTS/` |
 | `--source-luts` | — | Override the LUTs applied to the source |
 | `--target-luts` | — | Override the LUTs applied to the target |
-| `--methods` | all 6 | Matching algorithms passed to `match_colors` |
+| `--methods` | all 6 | Which matching methods to build pipelines for; see [Matching methods](#matching-methods) |
 | `--datmatcher-dir` | — | Directory holding datMatcher's executables |
 
 Passing an empty string to an override selects *no* variants for that axis —
 `--source-tonemapping ""` is the normal way to skip tonemapping on one side.
+
+## Matching methods
+
+`--methods` selects which colour-matching algorithms the generated pipelines
+use. All six are implemented by datMatcher's `match_colors`; the table below
+summarises the approach taken by each.
+
+| Method | Approach | Cost |
+| --- | --- | --- |
+| `rgb-moments` | Rescales each channel linearly so its mean and standard deviation match the target's — a gain + offset correction that ignores histogram shape entirely. | Cheapest |
+| `rgb-1d` | Matches each channel's cumulative histogram independently. No cross-channel awareness, so it cannot move a colour that is only wrong relative to the others. | Cheapest |
+| `rgb-3d-joint` | Matches the joint 3D distribution through a flattened index — a cheap rank match, cruder than IDT. | Cheap |
+| `rgb-3d-idt` | Joint 3D matching by iterative axis-cycling. | Moderate |
+| `rgb-3d-emd` | Approximates full 3D optimal transport by slicing: both distributions are projected onto many random 1D directions, each solved exactly by CDF matching, and the resulting corrections averaged. More projections get closer to true 3D transport. | Expensive |
+| `rgb-3d-sinkhorn` | Entropic-regularized optimal transport, solved by Sinkhorn-Knopp iteration. | Expensive |
+
+The costs are relative, not measured: the two 1D methods are the cheap end,
+joint is nearly as cheap, and the optimal-transport pair is the expensive end.
+datMatcher's own source calls both `rgb-moments` and `rgb-1d` its fastest, so
+treat the ordering within each end as approximate.
+
+The three 3D methods are the interesting ones, because they can move colours
+*relative to each other* — the thing a per-channel match cannot do. Sinkhorn
+and EMD are the most principled and the most expensive; IDT is the middle
+ground; joint is the cheap approximation of the same idea. `rgb-moments`
+ignores distribution shape altogether, so it is best as a fast preview, or as a
+sanity check that the two videos are already close.
+
+The implementations, their tuning flags (`--idt-iterations`,
+`--emd-projections`, `--sinkhorn-epsilon`, `--sinkhorn-iterations`) and their
+exact behaviour all belong to datMatcher — see
+[its README](https://github.com/datphyr/datMatcher) for those.
+
+### `--methods` does not reach `match_colors`
+
+datRegrade runs `match_colors` once per source/target pair with no `--methods`
+flag, and datMatcher's default is to generate **all** of its methods. Every
+pair therefore writes all six LUTs, whatever you pass here.
+
+`--methods` controls which of those LUTs datRegrade goes on to build *combine*
+and *capture* pipelines for. Narrowing it trims the downstream steps and the
+number of screenshots, but not the matching time — that is spent inside
+`match_colors` and is paid in full either way.
+
+So when a run is too big, the effective levers are the variant matrix
+(`--tonemapping`, `--luts`) — which reduces how many `match_colors` runs happen
+at all — and a shorter `--frames` list.
 
 ## The LUT toolkit
 
@@ -229,6 +289,59 @@ the same in and out of the pipeline), plus nearest-neighbour, and normalizes
 `--preserve`, `--mixer`, `--method` — so existing command lines keep working,
 and its output has been verified cell-by-cell against that original.
 
+## Design notes
+
+The background behind some of the structure above.
+
+### Preparation is deliberately separated from execution
+
+`auto_regrade.py` only ever prepares a project: it renders AviSynth scripts and
+writes command files, and never invokes DGIndexNV, datMatcher or ffmpeg.
+
+That split exists because the hard part of a regrade is a judgement call. The
+full default matrix is on the order of a thousand pipelines, and no automated
+metric tells you which one looks like the film you are matching — you have to
+look at frames. The generator gets you to the point where you can start
+looking; from there you drive it yourself and re-run only what you changed.
+
+It also means the generator is cheap, safe to re-run, and works without any of
+the media tooling installed — you can prepare a project before datMatcher or
+AviSynth+ are even set up.
+
+### The variant matrix
+
+Source and target each get a set of variants, and the useful comparison is
+usually the cross product rather than either side alone.
+
+`plain` ↔ `hdr` is a special pairing — an HDR source with no conversion,
+against an HDR target — and is skipped against the other variants. Where a
+source variant is itself a LUT, the match LUT is composed with it so that the
+pipeline stays a single LUT for the capture step. That composition is what
+`utils/cube.py` exists for.
+
+### Three LUT conventions worth knowing
+
+These are load-bearing: a reimplementation can be perfectly self-consistent and
+still disagree with the original tool on any of them.
+
+1. **File ordering.** `.cube` entries run red axis fastest, then green, then
+   blue, so a naive reshape yields `[b, g, r]`. `utils/cube.py` transposes
+   immediately and uses `[r, g, b]` everywhere else.
+2. **Interpolation.** Composition *always* samples tetrahedrally, matching the
+   `interp="tetrahedral"` the generated AviSynth scripts pass to `DGCube`, so
+   composing here and applying there agree. The `--method` flag only reaches
+   the resampling helper; using nearest-neighbour for the composition itself
+   introduces visible quantization error.
+3. **Tie-breaking.** Nearest-neighbour resampling rounds exact `.5` fractions
+   *down*. `numpy.rint` rounds halves to even instead, which differs on
+   exactly-tied inputs — resampling 3 → 5 hits them, and so does the real
+   65-point LUT.
+
+None of these were reasoned out; they were established by comparing against the
+original LUTify script that `utils/cube.py` replaced, cell by cell, across sizes,
+mixer values and both interpolation methods. Each one was something an earlier
+draft got wrong, which is why they are written down rather than left implicit.
+
 ## Project layout
 
 ```
@@ -237,7 +350,6 @@ utils/
 ├── cube.py              the .cube LUT toolkit
 └── datMatcher/          drop datMatcher's executables here (gitignored)
 LUTS/                    PQ->BT709 conversion LUTs used as source variants
-docs/                    design notes
 examples/                example command lines
 REGRADES/                generated per-project output (gitignored)
 ```
