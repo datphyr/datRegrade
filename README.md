@@ -50,7 +50,7 @@ The variants come from three independent axes:
 
 | Axis | Default | Meaning |
 | --- | --- | --- |
-| Source variants | 15 | `plain`, the 2 PQ→BT709 LUTs, and each of the 12 tonemappers |
+| Source variants | 15 | Each of the 12 tonemappers, the 2 PQ→BT709 LUTs, and `plain` |
 | Target variants | 16 | The same, plus `hdr` — the reference converted *up* to HDR |
 | Matching methods | 6 | The colour-matching algorithms; see [Matching methods](#matching-methods) |
 
