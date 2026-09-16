@@ -7,10 +7,6 @@ REGRADES/
 # them automatically; everything there is ignored so it never gets committed.
 utils/datMatcher/
 
-# The legacy uppercase UTILS/ directory held vendored copies of datMatcher,
-# LUTify and mixLUT; all of it is superseded and must never be committed.
-UTILS/
-
 # Generated batch/shell files
 *.bat
 *.sh
