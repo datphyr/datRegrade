@@ -20,6 +20,18 @@ import jinja2
 #: Default location for datMatcher's executables, relative to this repo.
 DATMATCHER_SUBDIR = Path("utils") / "datMatcher"
 
+#: Colour-matching methods, in the order they are requested from match_colors.
+#: These are datMatcher's own tokens and are passed straight through to it;
+#: anything else is rejected here rather than by match_colors hours later.
+MATCHING_METHODS = (
+    "rgb-1d",
+    "rgb-3d-joint",
+    "rgb-3d-idt",
+    "rgb-3d-emd",
+    "rgb-3d-sinkhorn",
+    "rgb-moments",
+)
+
 
 def _executable_names(name):
     """Return the filenames to look for, with and without the Windows suffix."""
@@ -439,7 +451,7 @@ def main():
     parser.add_argument("--luts", default="PQ_to_BT709_v1.cube,PQ_to_BT709_v2.cube", help="Comma-separated LUT filenames")
     parser.add_argument("--source-luts", help="Override source LUT filenames")
     parser.add_argument("--target-luts", help="Override target LUT filenames")
-    parser.add_argument("--methods", default="rgb-1d,rgb-3d-joint,rgb-3d-idt,rgb-3d-emd,rgb-3d-sinkhorn,rgb-moments", help="Comma-separated matching methods")
+    parser.add_argument("--methods", default=",".join(MATCHING_METHODS), help="Comma-separated matching methods (datMatcher's names)")
     parser.add_argument("--datmatcher-dir", default=None, help="Directory holding datMatcher's extract_colors/match_colors executables (default: $DATMATCHER_DIR, then ./utils/datMatcher)")
     args = parser.parse_args()
 
@@ -458,6 +470,13 @@ def main():
     methods = split_comma_list(args.methods)
     if not methods:
         print("[ERROR] At least one matching algorithm must be specified.")
+        sys.exit(1)
+    unknown_methods = [m for m in methods if m not in MATCHING_METHODS]
+    if unknown_methods:
+        # Reject here rather than emitting a command that match_colors will
+        # only fail on when the generated batch file eventually runs.
+        print(f"[ERROR] Unknown matching method(s): {', '.join(unknown_methods)}")
+        print(f"[ERROR] Valid methods: {', '.join(MATCHING_METHODS)}")
         sys.exit(1)
 
     repo_root = Path(__file__).resolve().parent
@@ -673,7 +692,7 @@ def main():
                 continue
             match_dir = get_match_lut_dir(luts_dir, sv['name'], variant)
             os.makedirs(match_dir, exist_ok=True)
-            record_cmd([datmatcher_tool("match_colors"), "--source", str(source_color_files[sv['name']].relative_to(out_dir)), "--target", str(target_color_files[variant].relative_to(out_dir)), "--output", str(match_dir.relative_to(out_dir)), "--size", "65"], step='match_lut', desc=f"Match LUT: source {sv['name']} -> target {variant} (all algorithms)")
+            record_cmd([datmatcher_tool("match_colors"), "--source", str(source_color_files[sv['name']].relative_to(out_dir)), "--target", str(target_color_files[variant].relative_to(out_dir)), "--output", str(match_dir.relative_to(out_dir)), "--size", "65", "--methods", ",".join(methods)], step='match_lut', desc=f"Match LUT: source {sv['name']} -> target {variant} ({len(methods)} method(s))")
             for method in methods:
                 match_lut_paths[(sv['name'], variant, method)] = get_match_lut_dir(luts_dir, sv['name'], variant) / get_match_lut_filename(sv['name'], variant, method)
 

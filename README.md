@@ -19,6 +19,7 @@ Inspect the generated scripts, run the steps you want, and compare the results.
 - [Usage](#usage)
 - [Options](#options)
 - [Matching methods](#matching-methods)
+- [Tonemapping and LUTs](#tonemapping-and-luts)
 - [The LUT toolkit](#the-lut-toolkit)
 - [Design notes](#design-notes)
 - [Project layout](#project-layout)
@@ -49,12 +50,17 @@ The variants come from three independent axes:
 
 | Axis | Default | Meaning |
 | --- | --- | --- |
-| Source variants | 13 | `plain`, the PQ→BT709 LUTs, and each tonemapper applied to the source |
-| Target variants | 13 | `plain`, `hdr`, the LUTs, and each tonemapper applied to the target |
-| Matching methods | 6 | The algorithms handed to `match_colors` |
+| Source variants | 15 | `plain`, the 2 PQ→BT709 LUTs, and each of the 12 tonemappers |
+| Target variants | 16 | The same, plus `hdr` (target left unconverted) |
+| Matching methods | 6 | The colour-matching algorithms; see [Matching methods](#matching-methods) |
 
-That default is roughly 13 × 13 × 6 combinations, which is why the work is
-fanned out into per-step command files rather than done in one go.
+Those are all different answers to the same question — *how do you get from HDR
+to SDR?* — and they are not interchangeable. See
+[Tonemapping and LUTs](#tonemapping-and-luts).
+
+At the defaults that works out to 211 `match_colors` runs and on the order of
+16,000 capture pipelines, which is why the work is fanned out into per-step
+command files rather than done in one go.
 
 ## What gets generated
 
@@ -206,7 +212,7 @@ python auto_regrade.py \
 | `--luts` | `PQ_to_BT709_v1.cube,PQ_to_BT709_v2.cube` | LUT filenames, resolved against `LUTS/` |
 | `--source-luts` | — | Override the LUTs applied to the source |
 | `--target-luts` | — | Override the LUTs applied to the target |
-| `--methods` | all 6 | Which matching methods to build pipelines for; see [Matching methods](#matching-methods) |
+| `--methods` | all 6 | Colour-matching methods to request from `match_colors`; see [Matching methods](#matching-methods) |
 | `--datmatcher-dir` | — | Directory holding datMatcher's executables |
 
 Passing an empty string to an override selects *no* variants for that axis —
@@ -244,20 +250,74 @@ The implementations, their tuning flags (`--idt-iterations`,
 exact behaviour all belong to datMatcher — see
 [its README](https://github.com/datphyr/datMatcher) for those.
 
-### `--methods` does not reach `match_colors`
+### Narrowing a run
 
-datRegrade runs `match_colors` once per source/target pair with no `--methods`
-flag, and datMatcher's default is to generate **all** of its methods. Every
-pair therefore writes all six LUTs, whatever you pass here.
+`--methods` is passed straight through to `match_colors`, so limiting it does
+reduce the matching work: each source/target pair writes one LUT per requested
+method instead of all six. Names are validated before anything is generated,
+with the valid list printed, rather than failing hours later inside a batch
+file.
 
-`--methods` controls which of those LUTs datRegrade goes on to build *combine*
-and *capture* pipelines for. Narrowing it trims the downstream steps and the
-number of screenshots, but not the matching time — that is spent inside
-`match_colors` and is paid in full either way.
+The other levers are the variant axes — `--tonemapping`, `--luts` and their
+per-side overrides, which decide how many `match_colors` runs happen at all —
+and a shorter `--frames` list, which sets the capture count.
 
-So when a run is too big, the effective levers are the variant matrix
-(`--tonemapping`, `--luts`) — which reduces how many `match_colors` runs happen
-at all — and a shorter `--frames` list.
+## Tonemapping and LUTs
+
+Getting from HDR to SDR is the actual problem this project is about, and there
+is no single right answer. datRegrade treats it as a search, so the ways of
+doing it are inputs you vary rather than something baked in.
+
+### The tonemapping functions
+
+These are [`libplacebo_Tonemap`](https://github.com/ildar-shaimordanov/avs_libplacebo)
+functions; the names and descriptions below are libplacebo's own.
+
+| Function | Description |
+| --- | --- |
+| `clip` | No tone mapping — everything above the target is clipped. |
+| `st2094-40` | SMPTE ST 2094-40 Annex B (HDR10+ dynamic metadata). |
+| `st2094-10` | SMPTE ST 2094-10 Annex B.2. |
+| `bt2390` | ITU-R BT.2390 EETF — the reference HDR→SDR curve. |
+| `bt2446a` | ITU-R BT.2446 Method A. |
+| `spline` | Single-pivot polynomial spline. |
+| `reinhard` | Reinhard. |
+| `mobius` | Möbius. |
+| `hable` | Filmic tone-mapping (Hable). |
+| `gamma` | Gamma function with knee. |
+| `linear` | Perceptually linear stretch. |
+| `linearlight` | Linear light stretch. |
+
+They fall into rough families. `bt2390` and the ST 2094 pair are the broadcast
+derived curves, with the ST ones using dynamic metadata where the source
+carries it. `bt2446a` is its own ITU method. `reinhard`, `mobius` and `hable`
+are the classic photographic curves — `hable` in particular is the filmic look
+familiar from games. `clip` is the do-nothing baseline worth including as a
+control. The `linear`/`linearlight` and `gamma` entries are simple stretches
+rather than perceptual curves.
+
+They are used in three different places, which is worth keeping straight:
+
+| Applied as | What it means |
+| --- | --- |
+| Source variant | The HDR source is tone-mapped to SDR with that function, giving a different starting point to match *from*. |
+| Target variant | The reference is put through the same function, asking "what if the reference had been mastered this way?" |
+| Post-tonemapping | Applied *after* the LUT, to see how the matched result responds to a different final curve. |
+
+### The LUTs
+
+The bundled `LUTS/*.cube` files are fixed PQ→BT709 conversions — a hand-built
+answer to the same HDR→SDR question, rather than a parametric curve. They are
+treated as variants on equal footing with the tonemappers, which is why
+`--luts` sits alongside `--tonemapping`.
+
+Where a source variant is itself a LUT, the match LUT is *composed* with it
+(`utils/cube.py`) so the pipeline stays a single LUT for the capture step. That
+composition is the reason the LUT toolkit exists at all.
+
+The `--source-tonemapping` / `--target-tonemapping` / `--luts` overrides exist
+so the two sides can be varied independently — the useful question is usually
+what happens when the source and target are treated *differently*.
 
 ## The LUT toolkit
 
