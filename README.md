@@ -51,11 +51,11 @@ The variants come from three independent axes:
 | Axis | Default | Meaning |
 | --- | --- | --- |
 | Source variants | 15 | `plain`, the 2 PQ→BT709 LUTs, and each of the 12 tonemappers |
-| Target variants | 16 | The same, plus `hdr` (target left unconverted) |
+| Target variants | 16 | The same, plus `hdr` — the reference converted *up* to HDR |
 | Matching methods | 6 | The colour-matching algorithms; see [Matching methods](#matching-methods) |
 
-Those are all different answers to the same question — *how do you get from HDR
-to SDR?* — and they are not interchangeable. See
+Most of these are different answers to *how do you get from HDR to SDR?*. The
+`plain` and `hdr` entries are the exceptions — see
 [Tonemapping and LUTs](#tonemapping-and-luts).
 
 At the defaults that works out to 211 `match_colors` runs and on the order of
@@ -270,7 +270,7 @@ doing it are inputs you vary rather than something baked in.
 
 ### The tonemapping functions
 
-These are [`libplacebo_Tonemap`](https://github.com/ildar-shaimordanov/avs_libplacebo)
+These are [`libplacebo_Tonemap`](https://github.com/Asd-g/avslibplacebo)
 functions; the names and descriptions below are libplacebo's own.
 
 | Function | Description |
@@ -298,11 +298,17 @@ rather than perceptual curves.
 
 They are used in three different places, which is worth keeping straight:
 
-| Applied as | What it means |
+| Applied as | How it is wired |
 | --- | --- |
-| Source variant | The HDR source is tone-mapped to SDR with that function, giving a different starting point to match *from*. |
-| Target variant | The reference is put through the same function, asking "what if the reference had been mastered this way?" |
-| Post-tonemapping | Applied *after* the LUT, to see how the matched result responds to a different final curve. |
+| Source variant | `Tonemap(dst_max=100, tone_mapping_function="<fn>")` — the HDR source is tone-mapped down to SDR, giving a different starting point to match *from*. |
+| Target variant | `Tonemap(src_max=100, src_csp=0, dst_csp=1)` then the function — the SDR reference is pushed *up* into HDR and back down through that curve. |
+| Post-tonemapping | Applied after the LUT, to see how a matched result responds to a different final curve. |
+
+The source and target sides are not mirror images: a source tonemapper is a
+single HDR→SDR pass, whereas a target tonemapper is a round trip through HDR
+space. That is deliberate — the target variants ask what the reference looks
+like once it has been through that processing, rather than what it would look
+like if it had been graded differently.
 
 ### The LUTs
 
@@ -373,11 +379,12 @@ AviSynth+ are even set up.
 Source and target each get a set of variants, and the useful comparison is
 usually the cross product rather than either side alone.
 
-`plain` ↔ `hdr` is a special pairing — an HDR source with no conversion,
-against an HDR target — and is skipped against the other variants. Where a
-source variant is itself a LUT, the match LUT is composed with it so that the
-pipeline stays a single LUT for the capture step. That composition is what
-`utils/cube.py` exists for.
+`plain` ↔ `hdr` is a special pairing: the unconverted HDR source, matched
+against the SDR reference converted *up* to HDR — so both sides sit in HDR
+space. It is the only pair either of those variants takes part in, which is why
+211 pairs is less than 15 × 16. Where a source variant is itself a LUT, the
+match LUT is composed with it so that the pipeline stays a single LUT for the
+capture step. That composition is what `utils/cube.py` exists for.
 
 ### Three LUT conventions worth knowing
 
