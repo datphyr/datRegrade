@@ -48,7 +48,7 @@ usually the cross product rather than either side alone.
 HDR target) and is skipped against the other variants. Where a source variant
 is itself a LUT, the match LUT is composed with it so that the pipeline remains
 a single LUT for the capture step — that composition is what
-`datregrade/cube.py` exists for.
+`utils/cube.py` exists for.
 
 ## LUT composition
 
@@ -56,7 +56,7 @@ Composing `a` then `b` means `b(a(rgb))`. Because `a`'s output rarely lands
 exactly on `b`'s grid points, this requires interpolation, and the choice of
 method is visible in the result.
 
-`datregrade/cube.py` implements:
+`utils/cube.py` implements:
 
 * **Tetrahedral** interpolation, the default. It is what the generated AviSynth
   scripts request via `DGCube(..., interp="tetrahedral")`, so composing here and

@@ -1,6 +1,6 @@
 # Python dependencies for datRegrade.
 #
-# The 3D LUT toolkit (datregrade/cube.py) needs numpy, and auto_regrade.py
+# The 3D LUT toolkit (utils/cube.py) needs numpy, and auto_regrade.py
 # renders its AviSynth scripts with Jinja2. Nothing else is required to
 # *prepare* a regrade project.
 #

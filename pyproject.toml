@@ -1,7 +1,9 @@
-[build-system]
-requires = ["setuptools>=64"]
-build-backend = "setuptools.build_meta"
-
+# Metadata and tool configuration.
+#
+# datRegrade is not distributed as an installable package: utils/cube.py is a
+# standalone script invoked by path, and auto_regrade.py is run from the repo
+# root. Dependencies are declared here for tooling and mirrored in
+# requirements.txt, which is what the README tells you to install.
 [project]
 name = "datregrade"
 version = "0.1.0"
@@ -16,12 +18,6 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=7"]
-
-[project.scripts]
-datregrade-cube = "datregrade.cube:main"
-
-[tool.setuptools]
-packages = ["datregrade"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

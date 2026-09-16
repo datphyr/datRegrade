@@ -120,11 +120,10 @@ Only the preparation step needs a Python environment:
 python -m pip install -r requirements.txt
 ```
 
-or, to get the LUT command-line tool installed as well:
-
-```sh
-python -m pip install .
-```
+That is all — there is nothing to build. `auto_regrade.py` is run from the
+repository root and `utils/cube.py` is invoked by path, so neither needs to be
+installed. The dependencies are also declared in `pyproject.toml` for editors
+and tooling.
 
 ## Usage
 
@@ -193,21 +192,21 @@ Passing an empty string to an override selects *no* variants for that axis —
 
 Composing two LUTs has to be done numerically — you cannot just concatenate
 `.cube` files, because sampling the second LUT at the first LUT's output
-requires interpolation. `datregrade/cube.py` does that in-tree, and replaces
+requires interpolation. `utils/cube.py` does that in-tree, and replaces
 the two helper scripts earlier versions of this project shelled out to.
 
 ```sh
 # Apply a.cube and then b.cube (b(a(rgb))), keeping the larger LUT size
-python -m datregrade.cube compose -i a.cube -c b.cube -o out.cube --preserve
+python utils/cube.py compose -i a.cube -c b.cube -o out.cube --preserve
 
 # Inspect a LUT
-python -m datregrade.cube info -i out.cube
+python utils/cube.py info -i out.cube
 
 # Resize a LUT
-python -m datregrade.cube resize -i a.cube -o small.cube --size 33
+python utils/cube.py resize -i a.cube -o small.cube --size 33
 
 # Linearly blend two equally sized LUTs
-python -m datregrade.cube blend -i a.cube -c b.cube -o mix.cube --amount 0.5
+python utils/cube.py blend -i a.cube -c b.cube -o mix.cube --amount 0.5
 ```
 
 It implements the standard tetrahedral interpolation (matching the
@@ -223,8 +222,9 @@ and its output has been verified cell-by-cell against that original.
 
 ```
 auto_regrade.py          the project generator (CLI)
-datregrade/
-└── cube.py              the .cube LUT toolkit
+utils/
+├── cube.py              the .cube LUT toolkit
+└── datMatcher/          optional; drop datMatcher's binaries here (gitignored)
 LUTS/                    PQ->BT709 conversion LUTs used as source variants
 tests/                   test suite + fixtures
 docs/                    design notes
@@ -241,7 +241,7 @@ python -m pytest tests/ -v
 The suite pins the LUT conventions rather than just internal consistency:
 composing is checked against hand-computed algebra, against the identity LUT,
 and against a reference `.cube` produced by the original LUTify script that
-`datregrade/cube.py` replaced.
+`utils/cube.py` replaced.
 
 ## Licensing note
 

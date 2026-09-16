@@ -43,12 +43,13 @@ behaviour is preserved here so existing datRegrade runs stay reproducible.
 Command line
 ------------
 The CLI mirrors LUTify's flag names so a caller can swap the program name and
-keep the rest of its arguments::
+keep the rest of its arguments. This file is a standalone script, invoked by
+path the same way the LUTify script it replaced was::
 
-    python -m datregrade.cube compose -i a.cube -c b.cube -o out.cube --preserve
-    python -m datregrade.cube blend   -i a.cube -c b.cube -o out.cube --amount 0.5
-    python -m datregrade.cube resize  -i a.cube -o out.cube --size 33
-    python -m datregrade.cube info    -i a.cube
+    python utils/cube.py compose -i a.cube -c b.cube -o out.cube --preserve
+    python utils/cube.py blend   -i a.cube -c b.cube -o out.cube --amount 0.5
+    python utils/cube.py resize  -i a.cube -o out.cube --size 33
+    python utils/cube.py info    -i a.cube
 """
 
 from __future__ import annotations
@@ -445,7 +446,7 @@ def _report(path: str | Path, cube: Cube) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="python -m datregrade.cube",
+        prog="python utils/cube.py",
         description="Compose, blend, resample and inspect 3D .cube LUTs.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)

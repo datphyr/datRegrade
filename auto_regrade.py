@@ -402,9 +402,9 @@ def main():
     source_path = Path(args.source).absolute()
     target_path = Path(args.target).absolute()
     luts_base_dir = repo_root / "LUTS"
-    # datRegrade composes LUTs with its own module instead of shelling out to
-    # the third-party LUTify script it used to vendor; see datregrade/cube.py.
-    cube_script = repo_root / "datregrade" / "cube.py"
+    # datRegrade composes LUTs with its own script instead of shelling out to
+    # the third-party LUTify script it used to vendor; see utils/cube.py.
+    cube_script = repo_root / "utils" / "cube.py"
     external_dirs = [repo_root] + list(_datmatcher_dirs())
 
     lut_map = {}

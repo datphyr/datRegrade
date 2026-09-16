@@ -33,12 +33,12 @@ jobs:
 
       - name: Check the LUT CLI works
         run: |
-          python -m datregrade.cube info -i tests/data/swap_rb.cube
-          python -m datregrade.cube compose \
+          python utils/cube.py info -i tests/data/swap_rb.cube
+          python utils/cube.py compose \
             -i tests/data/swap_rb.cube \
             -c tests/data/halve_r.cube \
             -o /tmp/out.cube --preserve
-          python -m datregrade.cube info -i /tmp/out.cube
+          python utils/cube.py info -i /tmp/out.cube
 
   lint:
     name: lint
@@ -53,7 +53,7 @@ jobs:
 
       - name: Byte-compile
         run: |
-          python -m compileall -q datregrade auto_regrade.py tests
+          python -m compileall -q utils auto_regrade.py tests
 
       - name: Check the project generator runs
         run: |

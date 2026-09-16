@@ -3,8 +3,12 @@
 REGRADES/
 
 # datMatcher is a separate project and is not vendored here; point
-# DATMATCHER_DIR at a checkout (or drop its binaries in utils/datMatcher/).
-utils/
+# DATMATCHER_DIR at a checkout, or drop its binaries in utils/datMatcher/.
+# utils/ itself holds tracked source, so ignore only the binaries.
+utils/datMatcher/
+
+# The legacy uppercase UTILS/ directory held vendored copies of datMatcher,
+# LUTify and mixLUT; all of it is superseded and must never be committed.
 UTILS/
 
 # Generated batch/shell files
