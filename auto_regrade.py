@@ -17,29 +17,93 @@ from pathlib import Path
 import jinja2
 
 
-def _datmatcher_dirs():
-    """Directories searched for the datMatcher executables, in order."""
+#: Default location for datMatcher's executables, relative to this repo.
+DATMATCHER_SUBDIR = Path("utils") / "datMatcher"
+
+
+def _executable_names(name):
+    """Return the filenames to look for, with and without the Windows suffix."""
+    return (name, f"{name}.exe")
+
+
+def _datmatcher_search_dirs():
+    """Directories that may hold datMatcher's executables, most specific first.
+
+    ``utils/`` is the intended drop-in location, so it is searched both as
+    ``utils/datMatcher/`` and as ``utils/`` itself.
+    """
     override = os.environ.get("DATMATCHER_DIR")
     if override:
         yield Path(override).expanduser().absolute()
     repo_root = Path(__file__).resolve().parent
-    yield repo_root / "utils" / "datMatcher"
+    yield repo_root / DATMATCHER_SUBDIR
+    yield repo_root / "utils"
     yield repo_root / "UTILS" / "datMatcher"
+    yield repo_root / "UTILS"
+
+
+def _find_executable(directory, names, max_depth=3):
+    """Find any of ``names`` in ``directory``, then in its subdirectories.
+
+    datMatcher builds into a subdirectory (``build/``, ``build/Release/``, ...),
+    so searching a few levels down lets a whole datMatcher checkout be dropped
+    into ``utils/`` as-is instead of extracting the two executables by hand.
+    """
+    if not directory.is_dir():
+        return None
+    for filename in names:
+        candidate = directory / filename
+        if candidate.is_file():
+            return candidate
+    if max_depth <= 0:
+        return None
+    try:
+        subdirs = sorted(p for p in directory.iterdir() if p.is_dir() and not p.is_symlink())
+    except OSError:
+        return None
+    for subdir in subdirs:
+        if subdir.name in {".git", "__pycache__"}:
+            continue
+        found = _find_executable(subdir, names, max_depth - 1)
+        if found is not None:
+            return found
+    return None
+
+
+_warned_tools = set()
+_resolved_tools: dict[str, str] = {}
 
 
 def datmatcher_tool(name):
     """Return the path to a datMatcher executable (``extract_colors``/``match_colors``).
 
-    datMatcher is a separate project that this repo does not vendor. It is
-    located via ``--datmatcher-dir``, the ``DATMATCHER_DIR`` environment
-    variable, then the ``utils/datMatcher`` or legacy ``UTILS/datMatcher``
-    directory next to this script. The bare name is returned as a last
-    resort so the generated command still shows what could not be found.
+    Drop datMatcher's executables into ``utils/datMatcher/`` -- or anywhere
+    else under ``utils/`` -- and they are found automatically. An explicit
+    location wins over that, via ``--datmatcher-dir`` or ``$DATMATCHER_DIR``.
+
+    If nothing is found, the bare name is returned so the generated command
+    still shows what was missing, and a warning reports where it looked once
+    per tool.
     """
-    for directory in _datmatcher_dirs():
-        for candidate in (directory / name, directory / f"{name}.exe"):
-            if candidate.is_file():
-                return str(candidate)
+    if name in _resolved_tools:
+        return _resolved_tools[name]
+
+    names = _executable_names(name)
+    for directory in _datmatcher_search_dirs():
+        found = _find_executable(directory, names)
+        if found is not None:
+            _resolved_tools[name] = str(found)
+            return str(found)
+
+    if name not in _warned_tools:
+        _warned_tools.add(name)
+        searched = ", ".join(str(d) for d in _datmatcher_search_dirs())
+        print(f"[WARNING] {name} not found. Searched: {searched}")
+        print(
+            "[WARNING] Put datMatcher's executables in ./utils/datMatcher/ "
+            "(or anywhere under ./utils/), or pass --datmatcher-dir."
+        )
+    _resolved_tools[name] = name
     return name
 
 
@@ -405,7 +469,7 @@ def main():
     # datRegrade composes LUTs with its own script instead of shelling out to
     # the third-party LUTify script it used to vendor; see utils/cube.py.
     cube_script = repo_root / "utils" / "cube.py"
-    external_dirs = [repo_root] + list(_datmatcher_dirs())
+    external_dirs = [repo_root] + list(_datmatcher_search_dirs())
 
     lut_map = {}
     all_lut_filenames = set(source_luts + target_luts)

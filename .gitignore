@@ -2,9 +2,9 @@
 # scripts, JSON colour reports, screenshots and LUTs under REGRADES/.
 REGRADES/
 
-# datMatcher is a separate project and is not vendored here; point
-# DATMATCHER_DIR at a checkout, or drop its binaries in utils/datMatcher/.
-# utils/ itself holds tracked source, so ignore only the binaries.
+# datMatcher is a separate project and is not vendored here. Drop its
+# executables (or a whole checkout) into utils/datMatcher/ and datRegrade finds
+# them automatically; everything there is ignored so it never gets committed.
 utils/datMatcher/
 
 # The legacy uppercase UTILS/ directory held vendored copies of datMatcher,
@@ -20,7 +20,6 @@ UTILS/
 # Generated LUT and analysis artefacts
 *.cube
 !LUTS/*.cube
-!tests/data/*.cube
 *_histogram.json
 *_colors.json
 
@@ -32,7 +31,6 @@ build/
 dist/
 .venv/
 venv/
-.pytest_cache/
 
 # Editor / OS cruft
 .vs/

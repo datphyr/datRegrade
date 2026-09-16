@@ -1,4 +1,4 @@
-# Metadata and tool configuration.
+# Metadata and dependency declarations.
 #
 # datRegrade is not distributed as an installable package: utils/cube.py is a
 # standalone script invoked by path, and auto_regrade.py is run from the repo
@@ -15,9 +15,3 @@ dependencies = [
     "jinja2>=3.0",
     "numpy>=1.21",
 ]
-
-[project.optional-dependencies]
-test = ["pytest>=7"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]

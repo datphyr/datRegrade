@@ -10,8 +10,6 @@ step-by-step command batches that produce them.
 It **prepares** a project and prints the commands; it never runs them itself.
 Inspect the generated scripts, run the steps you want, and compare the results.
 
-[![build](https://github.com/datphyr/datRegrade/actions/workflows/build.yml/badge.svg)](https://github.com/datphyr/datRegrade/actions/workflows/build.yml)
-
 ## Contents
 
 - [How it works](#how-it-works)
@@ -22,7 +20,6 @@ Inspect the generated scripts, run the steps you want, and compare the results.
 - [Options](#options)
 - [The LUT toolkit](#the-lut-toolkit)
 - [Project layout](#project-layout)
-- [Testing](#testing)
 - [Licensing note](#licensing-note)
 
 ## How it works
@@ -97,20 +94,34 @@ To **run** the generated project you additionally need, outside of pip:
 - **AviSynth+** with `DGDecodeNV` and a `libplacebo` tonemapping `Tonemap`
   function, since the generated `.avs` scripts depend on both.
 
-### Pointing datRegrade at datMatcher
+### Getting datMatcher
 
-datMatcher is a separate project and is deliberately **not** vendored here —
-its FFmpeg-linked binaries are large and change independently. Build or
-download it (see [datMatcher's README](https://github.com/datphyr/datMatcher)),
-then tell datRegrade where the executables are, in order of precedence:
+datMatcher is a separate project and its binaries are not stored here — they
+are large and change independently. Build or download it (see
+[datMatcher's README](https://github.com/datphyr/datMatcher)) and drop the
+result into `utils/datMatcher/`. That is the whole setup; datRegrade finds the
+executables on its own.
+
+```
+utils/datMatcher/
+├── extract_colors.exe
+└── match_colors.exe
+```
+
+Dropping in a whole **datMatcher checkout** works too — the executables are
+looked for a few directories deep, so a `build/` or `build/Release/` layout is
+found automatically. Loose executables directly in `utils/` also work.
+
+To keep datMatcher somewhere else entirely, either of these takes precedence:
 
 1. The `--datmatcher-dir` option.
 2. The `DATMATCHER_DIR` environment variable.
-3. `utils/datMatcher/` next to `auto_regrade.py`.
-4. `UTILS/datMatcher/` (the legacy name), for older checkouts.
 
-`extract_colors` and `match_colors` are looked up with and without a `.exe`
-suffix, so the same layout works on either platform.
+The legacy uppercase `UTILS/datMatcher/` is still searched, for older
+checkouts. `extract_colors` and `match_colors` are looked up with and without a
+`.exe` suffix, so the same layout works on either platform. If nothing is
+found, datRegrade says so and names every directory it searched, rather than
+failing later with a confusing error.
 
 ## Installing
 
@@ -224,24 +235,12 @@ and its output has been verified cell-by-cell against that original.
 auto_regrade.py          the project generator (CLI)
 utils/
 ├── cube.py              the .cube LUT toolkit
-└── datMatcher/          optional; drop datMatcher's binaries here (gitignored)
+└── datMatcher/          drop datMatcher's executables here (gitignored)
 LUTS/                    PQ->BT709 conversion LUTs used as source variants
-tests/                   test suite + fixtures
 docs/                    design notes
 examples/                example command lines
 REGRADES/                generated per-project output (gitignored)
 ```
-
-## Testing
-
-```sh
-python -m pytest tests/ -v
-```
-
-The suite pins the LUT conventions rather than just internal consistency:
-composing is checked against hand-computed algebra, against the identity LUT,
-and against a reference `.cube` produced by the original LUTify script that
-`utils/cube.py` replaced.
 
 ## Licensing note
 
