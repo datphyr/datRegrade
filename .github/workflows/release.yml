@@ -1,0 +1,150 @@
+name: release
+
+# Cuts a release automatically once a day if main has changed since the last
+# one -- nothing to do by hand: no version to edit anywhere, and no tag to push
+# yourself. Can also be run on demand (Actions tab > release > Run workflow),
+# which always releases regardless of whether anything changed.
+#
+# Unlike datMatcher there is nothing to compile here, so a release is a source
+# snapshot: the files a run actually needs, tagged and attached as one archive.
+# Everything runs as a single workflow, so the jobs after `tag` can check out
+# the exact tag it produced -- a tag pushed by GITHUB_TOKEN does not trigger
+# other workflows, so a separate one could not react to it anyway. Jobs inside
+# one workflow coordinate directly via `needs:`.
+#
+# Note: GitHub disables schedule triggers automatically after 60 days with no
+# pushes to the repo at all. Push anything (or re-enable it from this
+# workflow's "..." menu in the Actions tab) to bring it back if that happens.
+on:
+  schedule:
+    # 06:00 UTC daily. Adjust to taste -- cron fields are minute hour
+    # day-of-month month day-of-week; GitHub may delay a scheduled run by
+    # a few minutes under load, so treat this as "around 06:00" rather than
+    # exact.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name (leave empty to auto-generate v0.YYMMDD, or v0.YYMMDD.N if that already exists today)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.compute.outputs.tag }}
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full tag history, to check for collisions/changes below
+
+      - name: Check for changes since last release
+        id: check
+        run: |
+          # Only the scheduled trigger skips on "nothing changed" -- a
+          # manual run (someone clicked the button) should always release.
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          last_tag="$(git describe --tags --abbrev=0 --match 'v*' HEAD 2>/dev/null || true)"
+          head_sha="$(git rev-parse HEAD)"
+          if [ -n "$last_tag" ] && [ "$(git rev-parse "$last_tag^{commit}")" = "$head_sha" ]; then
+            echo "No commits since the last release ($last_tag) -- skipping today's scheduled release."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python
+        if: steps.check.outputs.skip != 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        if: steps.check.outputs.skip != 'true'
+        run: python -m pip install -r requirements.txt
+
+      # Creating the tag is what turns a commit into a release, so check the
+      # commit before tagging rather than after: otherwise a broken commit
+      # gets tagged and the failure only surfaces in a published release.
+      # There is no push-time CI here, so this is also the only automated
+      # check the project has.
+      - name: Smoke test
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          python utils/cube.py compose \
+            LUTS/PQ_to_BT709_v1.cube LUTS/PQ_to_BT709_v2.cube \
+            -o /tmp/composed.cube
+          python auto_regrade.py \
+            --source SRC.mkv --target TGT.mkv --frames 1 \
+            --tonemapping bt2390 --methods rgb-1d --output-dir SMOKE
+          # datMatcher is not present in CI; the generator must still prepare
+          # a project (it warns about the missing tools and carries on).
+          test -f REGRADES/SMOKE/04_combine_luts.sh
+          grep -q 'utils/cube.py compose' REGRADES/SMOKE/04_combine_luts.sh
+
+      - name: Compute tag name
+        id: compute
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            base="v0.$(date -u +%y%m%d)"
+            tag="$base"
+            n=1
+            # Collision-avoidance: if a release is already cut today, append
+            # .1, .2, ... instead of failing outright on the second run.
+            while git rev-parse -q --verify "refs/tags/$tag" >/dev/null; do
+              tag="${base}.${n}"
+              n=$((n + 1))
+            done
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Computed tag: $tag"
+
+      - name: Create and push tag
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          tag="${{ steps.compute.outputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "Release $tag"
+          git push origin "$tag"
+
+  # Packages the files a run needs -- nothing else. No build step, because
+  # there is nothing to build: auto_regrade.py runs from the repository root
+  # and utils/cube.py is invoked by path. LUTS/ is included because the
+  # default --luts names those two files, so without them a fresh checkout
+  # cannot generate a project.
+  publish:
+    needs: tag
+    if: needs.tag.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+
+      - name: Package
+        run: |
+          version="${{ needs.tag.outputs.tag }}"
+          dist="datRegrade-${version}"
+          mkdir -p "$dist/utils" "$dist/LUTS"
+          cp auto_regrade.py requirements.txt README.md "$dist/"
+          cp utils/cube.py "$dist/utils/"
+          cp LUTS/*.cube "$dist/LUTS/"
+          zip -r "${dist}.zip" "$dist"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.tag.outputs.tag }}
+          files: datRegrade-*.zip
+          generate_release_notes: true
